@@ -41,7 +41,7 @@ func main() {
 
 func handleRequest(conn net.Conn) {
 	for {
-		msg, err := common.ReadMsg(conn)
+		msg, err := encodeCharset.ReadMsg(conn)
 		if err != nil {
 			if err == io.EOF {
 				removeConn(conn)
@@ -69,7 +69,7 @@ func removeConn(conn net.Conn) {
 func broadcast(conn net.Conn, msg string) {
 	for i := range connections {
 		if connections[i] != conn {
-			err := common.WriteMsg(connections[i], msg)
+			err := encodeCharset.WriteMsg(connections[i], msg)
 			if err != nil {
 				log.Println(err)
 			}

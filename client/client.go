@@ -45,7 +45,7 @@ func writeInput(conn *net.TCPConn) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		err = common.WriteMsg(conn, username+": "+text)
+		err = encodeCharset.WriteMsg(conn, username+": "+text)
 		if err != nil {
 			log.Println(err)
 		}
@@ -55,7 +55,7 @@ func writeInput(conn *net.TCPConn) {
 func printOutput(conn *net.TCPConn) {
 	for {
 
-		msg, err := common.ReadMsg(conn)
+		msg, err := encodeCharset.ReadMsg(conn)
 		if err == io.EOF {
 			conn.Close()
 			fmt.Println("Connection Closed. Bye bye.")
