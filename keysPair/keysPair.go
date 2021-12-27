@@ -9,7 +9,7 @@ type KeysPair struct {
 	sharedKey  []byte
 }
 
-func (k *KeysPair) generatingKeyPair() {
+func (k *KeysPair) GeneratingKeyPair() {
 	k.curve = x3dh.NewCurve25519()
 	k.privateKey, _ = k.curve.GenerateKey(nil)
 	k.publicKey = k.curve.PublicKey(k.privateKey)
