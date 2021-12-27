@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"github.com/XFroggyX/chat-with-doubleratchet/encodeCharset"
 	"github.com/farazdagi/x3dh"
+	"github.com/tiabc/doubleratchet"
 	"io"
 	"log"
 	"net"
@@ -16,15 +18,38 @@ const (
 	connectHost = "0.0.0.0"
 )
 
-type user struct {
-	userConn net.Conn
-	userName string
-	userKey  x3dh.PublicKey
+type keysPair struct {
+	curve      x3dh.Curve25519
+	publicKey  x3dh.PublicKey
+	privateKey x3dh.PrivateKey
+	sharedKey  []byte
 }
 
-var channel [2]user
+func (k *keysPair) generatingKeyPair() {
+	k.curve = x3dh.NewCurve25519()
+	k.privateKey, _ = k.curve.GenerateKey(nil)
+	k.publicKey = k.curve.PublicKey(k.privateKey)
+}
+
+var (
+	sharedHka = [32]byte{
+		0xbd, 0x29, 0x18, 0xcb, 0x18, 0x6c, 0x26, 0x32,
+		0xd5, 0x82, 0x41, 0x2d, 0x11, 0xa4, 0x55, 0x87,
+		0x1e, 0x5b, 0xa3, 0xb5, 0x5a, 0x6d, 0xe1, 0x97,
+		0xde, 0xf7, 0x5e, 0xc3, 0xf2, 0xec, 0x1d, 0xd,
+	}
+	sharedNhkb = [32]byte{
+		0x32, 0x89, 0x3a, 0xed, 0x4b, 0xf0, 0xbf, 0xc1,
+		0xa5, 0xa9, 0x53, 0x73, 0x5b, 0xf9, 0x76, 0xce,
+		0x70, 0x8e, 0xe1, 0xa, 0xed, 0x98, 0x1d, 0xe3,
+		0xb4, 0xe9, 0xa9, 0x88, 0x54, 0x94, 0xaf, 0x23,
+	}
+)
 
 func main() {
+	myKeyPair := &keysPair{}
+	myKeyPair.generatingKeyPair()
+
 	l, err := net.Listen(connectType, connectHost+":"+connectPort)
 	if err != nil {
 		log.Panicln("Error listening: ", err.Error())
@@ -34,50 +59,64 @@ func main() {
 	defer l.Close()
 	log.Println("Listening on " + connectHost + ":" + connectPort)
 
-	for {
-		conn, err := l.Accept()
-		if err != nil {
-			log.Panicln("Error accepting: ", err.Error())
-			os.Exit(1)
-		}
-
-		idFreeChannel, statusChannel := channelFreeSpace()
-
-		if !statusChannel {
-			err := encodeCharset.WriteMsg(conn, "The channel is used")
-			if err != nil {
-				log.Panicln(err)
-			}
-		}
-
-		channel[idFreeChannel].userConn = conn
-		/*
-			_, err = conn.Read(channel[idFreeChannel].userKey[:])
-			if err != nil {
-				return
-			}
-
-			_, err = conn.Write(channel[idFreeChannel+1%2].userKey[:])
-			if err != nil {
-				return
-			}
-
-			_, err = conn.Read(channel[idFreeChannel].userKey[:])
-			if err != nil {
-				return
-			}
-		*/
-		go handleRequest(conn)
+	conn, err := l.Accept()
+	if err != nil {
+		log.Panicln("Error accepting: ", err.Error())
+		os.Exit(1)
 	}
 
-}
+	//key
+	var userPublicKey x3dh.PublicKey
+	_, err = conn.Read(userPublicKey[:])
+	if err != nil {
+		return
+	}
 
-func handleRequest(conn net.Conn) {
+	_, err = conn.Write(myKeyPair.publicKey[:])
+	if err != nil {
+		return
+	}
+
+	myKeyPair.sharedKey = myKeyPair.curve.ComputeSecret(myKeyPair.privateKey, userPublicKey)
+	fmt.Println("Key: ", myKeyPair.sharedKey)
+
+	//doubleratchet
+	_, err = doubleratchet.DefaultCrypto{}.GenerateDH()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var sharedKey [32]byte
+	copy(sharedKey[:], myKeyPair.sharedKey)
+
+	var bobPublic [32]byte
+	_, err = conn.Read(bobPublic[:])
+	if err != nil {
+		return
+	}
+
+	alice, err := doubleratchet.NewHEWithRemoteKey(sharedKey, sharedHka, sharedNhkb, bobPublic)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	m := alice.RatchetEncrypt([]byte("Hi Bob!"), nil)
+
+	err = encodeCharset.WriteMsg(conn, string(m.Header))
+	if err != nil {
+		log.Println(err)
+	}
+
+	err = encodeCharset.WriteMsg(conn, string(m.Ciphertext))
+	if err != nil {
+		log.Println(err)
+	}
+
+	//chat
 	for {
 		msg, err := encodeCharset.ReadMsg(conn)
 		if err != nil {
 			if err == io.EOF {
-				removeConn(conn)
 				conn.Close()
 				return
 			}
@@ -85,50 +124,16 @@ func handleRequest(conn net.Conn) {
 			return
 		}
 
-		log.Printf("Message Received: %s\n", msg)
-		fmt.Println("Name: ", msg)
-		broadcast(conn, msg)
-	}
+		fmt.Println("Alice: ", msg)
 
-}
-
-func removeConn(conn net.Conn) {
-	var i int
-	for i := range channel {
-		if channel[i].userConn == conn {
-			break
+		reader := bufio.NewReader(os.Stdin)
+		text, err := reader.ReadString('\n')
+		if err != nil {
+			log.Fatal(err)
+		}
+		err = encodeCharset.WriteMsg(conn, text)
+		if err != nil {
+			log.Println(err)
 		}
 	}
-	channel[i].userConn = nil
-	channel[i].userName = ""
-	channel[i].userKey = [32]byte{}
-}
-
-func idConn(conn net.Conn) (i int) {
-	for i := range channel {
-		if channel[i].userConn == conn {
-			return i
-		}
-	}
-	return -1
-}
-
-func broadcast(conn net.Conn, msg string) {
-	for i := range channel {
-		if channel[i].userConn != conn && channel[i].userConn != nil {
-			err := encodeCharset.WriteMsg(channel[i].userConn, msg)
-			if err != nil {
-				log.Println(err)
-			}
-		}
-	}
-}
-
-func channelFreeSpace() (int, bool) {
-	for id, user := range channel {
-		if user.userConn == nil {
-			return id, true
-		}
-	}
-	return -1, false
 }
