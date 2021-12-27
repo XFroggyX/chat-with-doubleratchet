@@ -24,7 +24,7 @@ func ToBytes(i int32) ([]byte, error) {
 }
 
 // WriteMsg - функция для отправки сообщения
-func WriteMsg(conn net.Conn, msg string) error {
+func WriteMsg(conn io.Writer, msg string) error {
 	// Отправляем размер сообщения
 	bytes, err := ToBytes(int32(len([]byte(msg))))
 	if err != nil {
@@ -43,18 +43,18 @@ func WriteMsg(conn net.Conn, msg string) error {
 }
 
 // ReadMsg - функция для принятия сообщения
-func ReadMsg(conn net.Conn) (string, error) {
+func ReadMsg(conn net.Conn) ([]byte, error) {
 	// храним длинну входных данных
 	lenBuf := make([]byte, 4)
 	_, err := conn.Read(lenBuf)
 	if err != nil {
-		return "", err
+		return []byte(""), err
 	}
 
 	// длинна сообщения
 	lenData, err := FromBytes(lenBuf)
 	if err != nil {
-		return "", err
+		return []byte(""), err
 	}
 
 	buf := make([]byte, lenData)
@@ -64,11 +64,11 @@ func ReadMsg(conn net.Conn) (string, error) {
 		readMsg, err := conn.Read(buf[reqLen:])
 		reqLen += readMsg
 		if err == io.EOF {
-			return "", fmt.Errorf("received EOF before receiving all promised data")
+			return []byte(""), fmt.Errorf("received EOF before receiving all promised data")
 		}
 		if err != nil {
-			return "", fmt.Errorf("error reading: %s", err.Error())
+			return []byte(""), fmt.Errorf("error reading: %s", err.Error())
 		}
 	}
-	return string(buf), nil
+	return buf, nil
 }
