@@ -1,4 +1,4 @@
-package KeysPair
+package keyspair
 
 import "github.com/farazdagi/x3dh"
 
