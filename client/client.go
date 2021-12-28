@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"github.com/XFroggyX/chat-with-doubleratchet/encodeCharset"
 	"github.com/farazdagi/x3dh"
 	"github.com/tiabc/doubleratchet"
 	"log"
 	"net"
+	"os"
 )
 
 const (
@@ -83,21 +85,32 @@ func main() {
 	var sharedNhkb [32]byte
 	copy(sharedNhkb[:], listKeys[2].sharedKey)
 
+	var bobPublic [32]byte
+	_, err = conn.Read(bobPublic[:])
+	if err != nil {
+		return
+	}
+
+	alicePublic := keyPair.PublicKey()
+	_, err = conn.Write(alicePublic[:])
+	if err != nil {
+		return
+	}
+
 	countMsg := 0
 	for countMsg < 2000 {
-		var bobPublic [32]byte
-		_, err = conn.Read(bobPublic[:])
-		if err != nil {
-			return
-		}
-		fmt.Println(bobPublic)
-
 		alice, err := doubleratchet.NewHEWithRemoteKey(sharedKey, sharedHka, sharedNhkb, bobPublic)
+		if err != nil {
+			log.Panic(err)
+		}
+
+		reader := bufio.NewReader(os.Stdin)
+		msg, err := reader.ReadString('\n')
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		m := alice.RatchetEncrypt([]byte("Hi Bob!"), nil)
+		m := alice.RatchetEncrypt([]byte(msg), nil)
 
 		err = encodeCharset.WriteMsg(conn, string(m.Header))
 		if err != nil {
@@ -109,19 +122,11 @@ func main() {
 			log.Println(err)
 		}
 
-		//timer1 := time.NewTimer(10 * time.Second)
-		//<-timer1.C
-
 		// send
+
 		aliceR, err := doubleratchet.NewHE(sharedKey, sharedHka, sharedNhkb, keyPair)
 		if err != nil {
 			log.Fatal(err)
-		}
-
-		alicePublic := keyPair.PublicKey()
-		_, err = conn.Write(alicePublic[:])
-		if err != nil {
-			return
 		}
 
 		ms := doubleratchet.MessageHE{}
@@ -138,7 +143,7 @@ func main() {
 			log.Fatal(err)
 		}
 
-		fmt.Println(string(plaintext))
+		fmt.Print(string(plaintext))
 
 		countMsg++
 	}

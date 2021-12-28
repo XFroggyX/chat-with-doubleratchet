@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"github.com/XFroggyX/chat-with-doubleratchet/encodeCharset"
 	"github.com/farazdagi/x3dh"
@@ -89,17 +90,23 @@ func main() {
 	var sharedNhkb [32]byte
 	copy(sharedNhkb[:], listKeys[2].sharedKey)
 
+	bobPublic := keyPair.PublicKey()
+	_, err = conn.Write(bobPublic[:])
+	if err != nil {
+		return
+	}
+
+	var alicePublic [32]byte
+	_, err = conn.Read(alicePublic[:])
+	if err != nil {
+		return
+	}
+
 	countMsg := 0
 	for countMsg < 2000 {
 		bob, err := doubleratchet.NewHE(sharedKey, sharedHka, sharedNhkb, keyPair)
 		if err != nil {
 			log.Fatal(err)
-		}
-
-		bobPublic := keyPair.PublicKey()
-		_, err = conn.Write(bobPublic[:])
-		if err != nil {
-			return
 		}
 
 		ms := doubleratchet.MessageHE{}
@@ -116,22 +123,22 @@ func main() {
 			log.Fatal(err)
 		}
 
-		fmt.Println(string(plaintext))
+		fmt.Print(string(plaintext))
 
 		// send
-
-		var alicePublic [32]byte
-		_, err = conn.Read(alicePublic[:])
-		if err != nil {
-			return
-		}
 
 		bobR, err := doubleratchet.NewHEWithRemoteKey(sharedKey, sharedHka, sharedNhkb, alicePublic)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		m := bobR.RatchetEncrypt([]byte("Hi Alice!"), nil)
+		reader := bufio.NewReader(os.Stdin)
+		msg, err := reader.ReadString('\n')
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		m := bobR.RatchetEncrypt([]byte(msg), nil)
 
 		err = encodeCharset.WriteMsg(conn, string(m.Header))
 		if err != nil {
@@ -145,5 +152,5 @@ func main() {
 
 		countMsg++
 	}
-
+	fmt.Println()
 }
